@@ -5,6 +5,7 @@ const low = require('lowdb');
 const FileSync = require('lowdb/adapters/FileSync');
 const cron = require('node-cron');
 const fetch = require('node-fetch');
+const path = require('path');
 require('dotenv').config();
 
 // Configuração do banco de dados
@@ -23,6 +24,9 @@ const app = express();
 // Middleware para analisar JSON
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+
+// Configurar pasta de arquivos estáticos (coloque isto ANTES de outras rotas)
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Rota principal
 app.get('/', (req, res) => {
