@@ -69,6 +69,12 @@ async function processSlackEvent(payload) {
     if (payload.event && payload.event.type === 'message' && !payload.event.bot_id) {
       const message = payload.event;
       
+      // Verificar se é um comando
+      if (message.text && message.text.startsWith('!')) {
+        await processCommand(message);
+        return;
+      }
+      
       // Verificar se a mensagem corresponde ao padrão de formulário
       if (message.text) {
         const match = message.text.match(formPattern);
@@ -114,6 +120,88 @@ async function processSlackEvent(payload) {
     }
   } catch (error) {
     console.error('Erro ao processar evento do Slack:', error);
+  }
+}
+
+// Função para processar comandos
+async function processCommand(message) {
+  const command = message.text.trim().toLowerCase();
+  
+  if (command === '!listar') {
+    await listForms(message.channel, message.ts);
+  } else if (command === '!status') {
+    await checkStatus(message.channel, message.ts);
+  }
+}
+
+// Função para listar formulários
+async function listForms(channel, thread_ts) {
+  try {
+    const forms = db.get('forms').value();
+    
+    if (forms.length === 0) {
+      await sendSlackMessage(channel, "Não há formulários registrados no momento.", thread_ts);
+      return;
+    }
+    
+    // Ordenar formulários por prazo (mais próximos primeiro)
+    forms.sort((a, b) => new Date(a.deadline) - new Date(b.deadline));
+    
+    let message = "*Formulários Registrados:*\n\n";
+    
+    for (const form of forms) {
+      const deadlineDate = new Date(form.deadline);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const diffTime = deadlineDate - today;
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      
+      let statusEmoji = "⏳";
+      let statusText = `(faltam ${diffDays} dias)`;
+      
+      if (diffDays <= 0) {
+        statusEmoji = "⚠️";
+        statusText = "(prazo expirado)";
+      } else if (diffDays === 1) {
+        statusEmoji = "🔥";
+        statusText = "(último dia)";
+      } else if (diffDays <= 2) {
+        statusEmoji = "⚠️";
+        statusText = `(faltam ${diffDays} dias)`;
+      }
+      
+      message += `${statusEmoji} *${form.title}*\n   Prazo: ${form.deadline} ${statusText}\n   ID: ${form.id}\n\n`;
+    }
+    
+    await sendSlackMessage(channel, message, thread_ts);
+  } catch (error) {
+    console.error('Erro ao listar formulários:', error);
+    await sendSlackMessage(channel, "Erro ao listar formulários. Por favor, tente novamente.", thread_ts);
+  }
+}
+
+// Função para verificar status do bot
+async function checkStatus(channel, thread_ts) {
+  try {
+    const forms = db.get('forms').value();
+    const channels = db.get('channels').value();
+    
+    const uptime = process.uptime();
+    const uptimeHours = Math.floor(uptime / 3600);
+    const uptimeMinutes = Math.floor((uptime % 3600) / 60);
+    
+    const message = `*Status do Bot:*\n\n` +
+      `✅ Bot está funcionando normalmente\n` +
+      `⏱️ Tempo online: ${uptimeHours}h ${uptimeMinutes}m\n` +
+      `📋 Formulários registrados: ${forms.length}\n` +
+      `💬 Canais monitorados: ${channels.length}\n` +
+      `🔄 Verificação de prazos: Diariamente às 10:00\n`;
+    
+    await sendSlackMessage(channel, message, thread_ts);
+  } catch (error) {
+    console.error('Erro ao verificar status:', error);
+    await sendSlackMessage(channel, "Erro ao verificar status. Por favor, tente novamente.", thread_ts);
   }
 }
 
@@ -183,6 +271,12 @@ cron.schedule('0 10 * * *', async () => {
   await checkDeadlines();
 });
 
+// Configurar limpeza diária de formulários expirados
+cron.schedule('0 0 * * *', async () => {
+  console.log('Removendo formulários expirados...');
+  await removeExpiredForms();
+});
+
 // Função para verificar prazos e enviar lembretes
 async function checkDeadlines() {
   const forms = db.get('forms').value();
@@ -213,6 +307,14 @@ async function checkDeadlines() {
         .assign({ notifiedOneDay: true })
         .write();
     }
+    
+    // Remover formulários expirados (prazo já passou)
+    if (diffDays < 0) {
+      console.log(`Removendo formulário expirado: ${form.title} (${form.deadline})`);
+      db.get('forms')
+        .remove({ id: form.id })
+        .write();
+    }
   }
 }
 
@@ -241,9 +343,39 @@ async function sendReminder(form, days) {
   }
 }
 
+// Função para remover formulários expirados
+async function removeExpiredForms() {
+  try {
+    const forms = db.get('forms').value();
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    let removedCount = 0;
+    
+    for (const form of forms) {
+      const deadlineDate = new Date(form.deadline);
+      deadlineDate.setHours(0, 0, 0, 0);
+      
+      if (deadlineDate < today) {
+        console.log(`Removendo formulário expirado: ${form.title} (${form.deadline})`);
+        db.get('forms')
+          .remove({ id: form.id })
+          .write();
+        
+        removedCount++;
+      }
+    }
+    
+    console.log(`Remoção de formulários expirados concluída. ${removedCount} formulário(s) removido(s).`);
+  } catch (error) {
+    console.error('Erro ao remover formulários expirados:', error);
+  }
+}
+
 // Definir porta
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
   console.log('Bot iniciado! Verificador de prazos configurado para rodar diariamente às 10:00.');
+  console.log('Limpeza de formulários expirados configurada para rodar diariamente à meia-noite.');
 }); 
