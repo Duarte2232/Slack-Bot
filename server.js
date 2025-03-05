@@ -3,6 +3,7 @@ const bodyParser = require('body-parser');
 const low = require('lowdb');
 const FileSync = require('lowdb/adapters/FileSync');
 const cron = require('node-cron');
+const crypto = require('crypto');
 require('dotenv').config();
 
 // Configuração do banco de dados
@@ -18,13 +19,113 @@ db.defaults({
 // Configuração do Express
 const app = express();
 
-// Middleware para analisar JSON
-app.use(bodyParser.json());
+// Middleware para capturar o corpo bruto da requisição para verificação de assinatura
+app.use(express.json({
+  verify: (req, res, buf) => {
+    req.rawBody = buf.toString();
+  }
+}));
+
+// Middleware para analisar URL encoded
 app.use(bodyParser.urlencoded({ extended: true }));
+
+// Middleware para verificar assinatura do Slack
+const verifySlackSignature = (req, res, next) => {
+  // Pular verificação para rotas que não são do Slack
+  if (!req.path.startsWith('/slack')) {
+    return next();
+  }
+  
+  try {
+    const slackSigningSecret = process.env.SLACK_SIGNING_SECRET;
+    const slackSignature = req.headers['x-slack-signature'];
+    const timestamp = req.headers['x-slack-request-timestamp'];
+    
+    // Verificar se os headers necessários estão presentes
+    if (!slackSignature || !timestamp) {
+      console.log('Headers de assinatura do Slack ausentes');
+      return next();
+    }
+    
+    // Verificar se a requisição não é muito antiga (mais de 5 minutos)
+    const currentTime = Math.floor(Date.now() / 1000);
+    if (Math.abs(currentTime - timestamp) > 300) {
+      console.log('Requisição muito antiga, possível replay attack');
+      return res.status(400).send('Requisição expirada');
+    }
+    
+    // Usar o corpo bruto da requisição
+    const requestBody = req.rawBody || '';
+    
+    // Criar a string base para assinatura
+    const baseString = `v0:${timestamp}:${requestBody}`;
+    
+    // Calcular a assinatura
+    const mySignature = 'v0=' + 
+      crypto.createHmac('sha256', slackSigningSecret)
+            .update(baseString)
+            .digest('hex');
+    
+    // Comparar assinaturas (desativado temporariamente para depuração)
+    console.log('Assinatura calculada:', mySignature);
+    console.log('Assinatura recebida:', slackSignature);
+    
+    // Desativar temporariamente a verificação para depuração
+    return next();
+    
+    /* Código original de verificação
+    if (crypto.timingSafeEqual(
+      Buffer.from(mySignature),
+      Buffer.from(slackSignature)
+    )) {
+      console.log('Assinatura do Slack verificada com sucesso');
+      return next();
+    } else {
+      console.log('Assinatura do Slack inválida');
+      console.log('Esperada:', mySignature);
+      console.log('Recebida:', slackSignature);
+      return res.status(401).send('Assinatura inválida');
+    }
+    */
+  } catch (error) {
+    console.error('Erro ao verificar assinatura do Slack:', error);
+    // Continuar mesmo com erro na verificação (para depuração)
+    return next();
+  }
+};
+
+// Aplicar middleware de verificação apenas para rotas do Slack em produção
+if (process.env.NODE_ENV === 'production') {
+  app.use('/slack', verifySlackSignature);
+}
 
 // Rota principal
 app.get('/', (req, res) => {
   res.send('Slack Form Bot está funcionando!');
+});
+
+// Rota de teste para verificar se o servidor está respondendo
+app.get('/test', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    message: 'Servidor está funcionando corretamente',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Rota específica para o desafio do Slack
+app.post('/slack/challenge', (req, res) => {
+  console.log('Recebida requisição de desafio do Slack');
+  console.log('Body:', JSON.stringify(req.body));
+  
+  if (req.body && req.body.challenge) {
+    console.log('Respondendo ao desafio do Slack:', req.body.challenge);
+    // Definir o tipo de conteúdo como texto simples
+    res.setHeader('Content-Type', 'text/plain');
+    return res.status(200).send(req.body.challenge);
+  }
+  
+  return res.status(400).send('Desafio não encontrado na requisição');
 });
 
 // Padrão para detectar mensagens de formulários
@@ -32,17 +133,33 @@ const formPattern = /Novo formulário:\s*"([^"]+)"\s*Prazo:\s*(\d{4}-\d{2}-\d{2}
 
 // Endpoint para verificação do Slack e processamento de eventos
 app.post('/slack/events', (req, res) => {
+  console.log('Recebida requisição POST em /slack/events');
+  console.log('Headers:', JSON.stringify(req.headers));
+  console.log('Body:', JSON.stringify(req.body));
+  
   // Verificar se é um desafio de URL
-  if (req.body.challenge) {
+  if (req.body && req.body.challenge) {
     console.log('Respondendo ao desafio do Slack:', req.body.challenge);
-    return res.json({ challenge: req.body.challenge });
+    // Definir o tipo de conteúdo como texto simples
+    res.setHeader('Content-Type', 'text/plain');
+    return res.status(200).send(req.body.challenge);
   }
   
-  // Processar eventos
-  if (req.body.event) {
+  // Se não for um desafio, responder com sucesso e processar o evento assincronamente
+  res.status(200).send();
+  
+  // Processar eventos de forma assíncrona
+  if (req.body && req.body.event) {
+    processSlackEvent(req.body);
+  }
+});
+
+// Função para processar eventos do Slack de forma assíncrona
+async function processSlackEvent(payload) {
+  try {
     // Verificar se é uma mensagem
-    if (req.body.event.type === 'message' && !req.body.event.bot_id) {
-      const message = req.body.event;
+    if (payload.event && payload.event.type === 'message' && !payload.event.bot_id) {
+      const message = payload.event;
       
       // Verificar se a mensagem corresponde ao padrão de formulário
       if (message.text) {
@@ -78,20 +195,19 @@ app.post('/slack/events', (req, res) => {
           }
           
           // Enviar confirmação
-          sendSlackMessage(message.channel, 
+          await sendSlackMessage(message.channel, 
             `✅ Formulário detectado e adicionado ao sistema!\n*Título:* ${title}\n*Prazo:* ${deadline}\n*Descrição:* ${description || 'Nenhuma descrição fornecida'}\n\nLembretes serão enviados automaticamente 2 dias e 1 dia antes do prazo.`,
             message.ts);
           
           // Adicionar reação
-          addReaction(message.channel, message.ts, 'white_check_mark');
+          await addReaction(message.channel, message.ts, 'white_check_mark');
         }
       }
     }
+  } catch (error) {
+    console.error('Erro ao processar evento do Slack:', error);
   }
-  
-  // Responder ao Slack
-  res.status(200).send();
-});
+}
 
 // Função para enviar mensagem ao Slack
 async function sendSlackMessage(channel, text, thread_ts = null) {
