@@ -66,6 +66,19 @@ app.all('/ping', (req, res) => {
   console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ping recebido em /ping de ${req.ip || 'IP desconhecido'}`);
 });
 
+// Rota para debug
+app.all('/debug', (req, res) => {
+  console.log('--- DEBUG REQUEST ---');
+  console.log(`Método: ${req.method}`);
+  console.log(`IP: ${req.ip}`);
+  console.log('Cabeçalhos:');
+  console.log(JSON.stringify(req.headers, null, 2));
+  console.log('-------------------');
+  
+  // Responder com sucesso
+  res.status(200).send('OK');
+});
+
 // Padrão para detectar mensagens de formulários
 const formPattern = /NOVO FORMULÁRIO\s*-\s*([^-]+)-\s*responder ate\s*dia\s*(\d{1,2})\/(\d{1,2})/i;
 
