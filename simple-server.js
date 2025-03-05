@@ -28,6 +28,14 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // Configurar pasta de arquivos estáticos (coloque isto ANTES de outras rotas)
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Rota de monitoramento (ANTES de qualquer middleware)
+app.all('/monitor', (req, res) => {
+  res.status(200).send('OK');
+});
+
+// Depois, adicione seus middlewares de segurança
+// app.use(securityMiddleware);
+
 // Rota principal
 app.get('/', (req, res) => {
   res.send('Slack Form Bot está funcionando!');
