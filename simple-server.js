@@ -38,41 +38,21 @@ app.get('/test', (req, res) => {
   });
 });
 
-// Rota específica para o UptimeRobot que responde tanto a GET quanto a HEAD
-app.get('/uptimerobot', respondToUptimeRobot);
-app.head('/uptimerobot', respondToUptimeRobot);
-
-// Função para responder às solicitações do UptimeRobot
-function respondToUptimeRobot(req, res) {
-  const userAgent = req.headers['user-agent'] || '';
-  const method = req.method;
+// Rota pública para monitoramento (sem verificações)
+app.all('/ping', (req, res) => {
+  // Configura os cabeçalhos da resposta
+  res.setHeader('Content-Type', 'text/plain');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   
-  // Verifica se a requisição vem do UptimeRobot ou de um navegador (para testes)
-  if (userAgent.includes('UptimeRobot') || 
-      userAgent.includes('uptime-robot') || 
-      userAgent.includes('Mozilla')) {
-    
-    // Configura os cabeçalhos da resposta
-    res.setHeader('Content-Type', 'text/plain');
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.setHeader('X-Bot-Status', 'active');
-    
-    // Responde com status 200 (OK)
-    if (method === 'HEAD') {
-      // Para HEAD, apenas enviamos os cabeçalhos, sem corpo
-      res.status(200).end();
-      console.log(`[${new Date().toLocaleTimeString()}] HEAD ping recebido do UptimeRobot`);
-    } else {
-      // Para GET, enviamos também o corpo da resposta
-      res.status(200).send('OK! Bot está ativo. UptimeRobot verificação bem-sucedida.');
-      console.log(`[${new Date().toLocaleTimeString()}] GET ping recebido do UptimeRobot`);
-    }
+  // Responde com status 200 (OK) para qualquer solicitação
+  if (req.method === 'HEAD') {
+    res.status(200).end();
   } else {
-    // Responde com erro para outras origens
-    res.status(403).send('Acesso não autorizado');
-    console.log(`[${new Date().toLocaleTimeString()}] Tentativa de acesso não autorizado à rota de ping: ${userAgent}`);
+    res.status(200).send('OK! Bot está ativo.');
   }
-}
+  
+  console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ping recebido em /ping de ${req.ip || 'IP desconhecido'}`);
+});
 
 // Padrão para detectar mensagens de formulários
 const formPattern = /NOVO FORMULÁRIO\s*-\s*([^-]+)-\s*responder ate\s*dia\s*(\d{1,2})\/(\d{1,2})/i;
