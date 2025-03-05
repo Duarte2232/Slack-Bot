@@ -28,14 +28,6 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // Configurar pasta de arquivos estáticos (coloque isto ANTES de outras rotas)
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Rota de monitoramento (ANTES de qualquer middleware)
-app.all('/monitor', (req, res) => {
-  res.status(200).send('OK');
-});
-
-// Depois, adicione seus middlewares de segurança
-// app.use(securityMiddleware);
-
 // Rota principal
 app.get('/', (req, res) => {
   res.send('Slack Form Bot está funcionando!');
@@ -48,35 +40,6 @@ app.get('/test', (req, res) => {
     message: 'Servidor está funcionando corretamente',
     timestamp: new Date().toISOString()
   });
-});
-
-// Rota pública para monitoramento (sem verificações)
-app.all('/ping', (req, res) => {
-  // Configura os cabeçalhos da resposta
-  res.setHeader('Content-Type', 'text/plain');
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  
-  // Responde com status 200 (OK) para qualquer solicitação
-  if (req.method === 'HEAD') {
-    res.status(200).end();
-  } else {
-    res.status(200).send('OK! Bot está ativo.');
-  }
-  
-  console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ping recebido em /ping de ${req.ip || 'IP desconhecido'}`);
-});
-
-// Rota para debug
-app.all('/debug', (req, res) => {
-  console.log('--- DEBUG REQUEST ---');
-  console.log(`Método: ${req.method}`);
-  console.log(`IP: ${req.ip}`);
-  console.log('Cabeçalhos:');
-  console.log(JSON.stringify(req.headers, null, 2));
-  console.log('-------------------');
-  
-  // Responder com sucesso
-  res.status(200).send('OK');
 });
 
 // Padrão para detectar mensagens de formulários
@@ -424,6 +387,19 @@ async function removeExpiredForms() {
     console.error('Erro ao remover formulários expirados:', error);
   }
 }
+
+// Função simples para manter o bot ativo
+function manterBotAtivo() {
+  // Ping a cada 4 minutos (240000 ms)
+  setInterval(() => {
+    console.log(`[${new Date().toLocaleTimeString()}] Bot ainda ativo`);
+  }, 240000);
+  
+  console.log('Sistema de auto-ping configurado');
+}
+
+// Iniciar o auto-ping quando o servidor iniciar
+manterBotAtivo();
 
 // Definir porta
 const PORT = process.env.PORT || 3000;
