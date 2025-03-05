@@ -45,19 +45,14 @@ app.post('/slack/events', (req, res) => {
   console.log('Headers:', JSON.stringify(req.headers));
   console.log('Body:', JSON.stringify(req.body));
   
-  // Verificar se é um desafio de URL (url_verification)
-  if (req.body.type === 'url_verification') {
+  // Verificar se é um desafio de URL
+  if (req.body && req.body.type === 'url_verification') {
     console.log('Respondendo ao desafio do Slack:', req.body.challenge);
     return res.json({ challenge: req.body.challenge });
   }
   
-  // Se não for um desafio, responder com sucesso e processar o evento assincronamente
+  // Responder com sucesso para outros eventos
   res.status(200).send();
-  
-  // Processar eventos de forma assíncrona
-  if (req.body && req.body.event) {
-    processSlackEvent(req.body);
-  }
 });
 
 // Função para processar eventos do Slack de forma assíncrona

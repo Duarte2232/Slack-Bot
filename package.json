@@ -2,19 +2,16 @@
   "name": "slack-form-bot",
   "version": "1.0.0",
   "description": "Bot para detectar formulários no Slack",
-  "main": "server.js",
+  "main": "simple-server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node simple-server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "body-parser": "^1.20.2",
-    "dotenv": "^16.0.3",
-    "lowdb": "^1.0.0",
-    "node-cron": "^3.0.2"
+    "body-parser": "^1.20.2"
   },
   "engines": {
     "node": "16.x"
   },
   "license": "MIT"
-}
+} 
