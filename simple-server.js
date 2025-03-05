@@ -42,8 +42,8 @@ app.get('/test', (req, res) => {
   });
 });
 
-// Padrão para detectar mensagens de formulários
-const formPattern = /NOVO FORMULÁRIO\s*-\s*([^-]+)-\s*responder ate\s*dia\s*(\d{1,2})\/(\d{1,2})/i;
+// Regex avançada para detectar formulários com partes em negrito
+const formPattern = /NOVO\s+FORMUL[AÁ]RIO\s*-\s*([^-]+?)\s*-\s*responder\s+ate\s+dia\s*(\d{1,2})\s*\/\s*(\d{1,2})/i;
 
 // Rota específica para o desafio do Slack
 app.post('/slack/events', (req, res) => {
@@ -81,7 +81,9 @@ async function processSlackEvent(payload) {
       
       // Verificar se a mensagem corresponde ao padrão de formulário
       if (message.text) {
-        const match = message.text.match(formPattern);
+        // Remover asteriscos para lidar com texto em negrito
+        const cleanText = message.text.replace(/\*/g, '');
+        const match = cleanText.match(formPattern);
         
         if (match) {
           const title = match[1].trim();
@@ -208,7 +210,7 @@ async function checkStatus(channel, thread_ts) {
       `⏱️ Tempo online: ${uptimeHours}h ${uptimeMinutes}m\n` +
       `📋 Formulários registrados: ${forms.length}\n` +
       `💬 Canais monitorados: ${channels.length}\n` +
-      `🔄 Verificação de prazos: Diariamente às 10:00\n`;
+      `🔄 Verificação de prazos: Diariamente às 19:00\n`;
     
     await sendSlackMessage(channel, message, thread_ts);
   } catch (error) {
@@ -278,7 +280,7 @@ async function addReaction(channel, timestamp, reaction) {
 }
 
 // Configurar verificação diária de prazos
-cron.schedule('0 10 * * *', async () => {
+cron.schedule('0 19 * * *', async () => {
   console.log('Verificando prazos de formulários...');
   await checkDeadlines();
 });
@@ -391,11 +393,18 @@ async function removeExpiredForms() {
 // Função simples para manter o bot ativo
 function manterBotAtivo() {
   // Ping a cada 4 minutos (240000 ms)
-  setInterval(() => {
-    console.log(`[${new Date().toLocaleTimeString()}] Bot ainda ativo`);
+  setInterval(async () => {
+    try {
+      // Fazer uma requisição HTTP real para a própria rota /test
+      const response = await fetch(`http://localhost:${process.env.PORT || 3000}/test`);
+      const data = await response.json();
+      console.log(`[${new Date().toLocaleTimeString()}] Auto-ping: Bot ativo - ${data.status}`);
+    } catch (error) {
+      console.error(`[${new Date().toLocaleTimeString()}] Erro no auto-ping:`, error);
+    }
   }, 240000);
   
-  console.log('Sistema de auto-ping configurado');
+  console.log('Sistema de auto-ping configurado para manter o bot ativo no Glitch');
 }
 
 // Iniciar o auto-ping quando o servidor iniciar
@@ -405,6 +414,6 @@ manterBotAtivo();
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT}`);
-  console.log('Bot iniciado! Verificador de prazos configurado para rodar diariamente às 10:00.');
+  console.log('Bot iniciado! Verificador de prazos configurado para rodar diariamente às 19:00.');
   console.log('Limpeza de formulários expirados configurada para rodar diariamente à meia-noite.');
 }); 
