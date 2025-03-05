@@ -38,8 +38,14 @@ app.get('/test', (req, res) => {
   });
 });
 
+// Adicione esta rota para o UptimeRobot
+app.get('/ping', (req, res) => {
+  res.status(200).send('OK! Bot está ativo.');
+  console.log(`[${new Date().toLocaleTimeString()}] Ping recebido de ${req.ip}`);
+});
+
 // Padrão para detectar mensagens de formulários
-const formPattern = /NOVO FORMULÁRIO\s*-\s*([^-]+)-\s*responder ate\s*(\d{4}-\d{2}-\d{2})/i;
+const formPattern = /NOVO FORMULÁRIO\s*-\s*([^-]+)-\s*responder ate\s*dia\s*(\d{1,2})\/(\d{1,2})/i;
 
 // Rota específica para o desafio do Slack
 app.post('/slack/events', (req, res) => {
@@ -81,10 +87,14 @@ async function processSlackEvent(payload) {
         
         if (match) {
           const title = match[1].trim();
-          const deadline = match[2];
+          const day = match[2].padStart(2, '0');
+          const month = match[3].padStart(2, '0');
+          // Usar o ano atual para a data
+          const currentYear = new Date().getFullYear();
+          const deadline = `${currentYear}-${month}-${day}`;
           const description = ''; // Não há descrição no novo formato
           
-          console.log('Formulário detectado:', { title, deadline });
+          console.log('Formulário detectado:', { title, day, month, deadline });
           
           // Adicionar formulário ao banco de dados
           const formId = Date.now().toString();
@@ -171,7 +181,11 @@ async function listForms(channel, thread_ts) {
         statusText = `(faltam ${diffDays} dias)`;
       }
       
-      message += `${statusEmoji} *${form.title}*\n   Prazo: ${form.deadline} ${statusText}\n   ID: ${form.id}\n\n`;
+      // Formatar a data para exibição (DD/MM)
+      const deadlineParts = form.deadline.split('-');
+      const formattedDate = `${deadlineParts[2]}/${deadlineParts[1]}`;
+      
+      message += `${statusEmoji} *${form.title}*\n   Prazo: ${formattedDate} ${statusText}\n   ID: ${form.id}\n\n`;
     }
     
     await sendSlackMessage(channel, message, thread_ts);
@@ -328,7 +342,11 @@ async function sendReminder(form, days) {
       return;
     }
     
-    const message = `⚠️ *LEMBRETE DE FORMULÁRIO*\n\n*${form.title}*\n*Acaba:* ${form.deadline} (${days === 1 ? 'AMANHÃ' : 'em 2 dias'})\n\n Preenche a tempo.`;
+    // Formatar a data para exibição (DD/MM)
+    const deadlineParts = form.deadline.split('-');
+    const formattedDate = `${deadlineParts[2]}/${deadlineParts[1]}`;
+    
+    const message = `⚠️ *LEMBRETE DE FORMULÁRIO*\n\n*${form.title}*\n*Acaba:* ${formattedDate} (${days === 1 ? 'AMANHÃ' : 'em 2 dias'})\n\n Preenche a tempo.`;
     
     for (const channel of channels) {
       try {
