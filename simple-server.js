@@ -38,10 +38,23 @@ app.get('/test', (req, res) => {
   });
 });
 
-// Adicione esta rota para o UptimeRobot
-app.get('/ping', (req, res) => {
-  res.status(200).send('OK! Bot está ativo.');
-  console.log(`[${new Date().toLocaleTimeString()}] Ping recebido de ${req.ip}`);
+// Rota específica para o UptimeRobot
+app.get('/uptimerobot', (req, res) => {
+  const userAgent = req.headers['user-agent'] || '';
+  
+  // Verifica se a requisição vem do UptimeRobot
+  if (userAgent.includes('UptimeRobot') || 
+      userAgent.includes('uptime-robot') || 
+      userAgent.includes('Mozilla')) {
+    
+    // Responde com sucesso para o UptimeRobot
+    res.status(200).send('OK! Bot está ativo. UptimeRobot verificação bem-sucedida.');
+    console.log(`[${new Date().toLocaleTimeString()}] Ping recebido do UptimeRobot`);
+  } else {
+    // Responde com erro para outras origens
+    res.status(403).send('Acesso não autorizado');
+    console.log(`[${new Date().toLocaleTimeString()}] Tentativa de acesso não autorizado à rota de ping: ${userAgent}`);
+  }
 });
 
 // Padrão para detectar mensagens de formulários
