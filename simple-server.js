@@ -390,13 +390,23 @@ function mostrarAjuda() {
   };
 }
 
-// Função para enviar mensagem para o Slack
-async function enviarMensagemSlack(channelId, text) {
+// Função modificada para enviar mensagem para o Slack com suporte a threads
+async function enviarMensagemSlack(channelId, text, thread_ts = null) {
   try {
     const slackToken = process.env.SLACK_BOT_TOKEN;
     
     if (!slackToken) {
       throw new Error('Token do Slack não configurado');
+    }
+    
+    const messagePayload = {
+      channel: channelId,
+      text: text
+    };
+    
+    // Se thread_ts for fornecido, adiciona ao payload para responder em thread
+    if (thread_ts) {
+      messagePayload.thread_ts = thread_ts;
     }
     
     const response = await fetch('https://slack.com/api/chat.postMessage', {
@@ -405,10 +415,7 @@ async function enviarMensagemSlack(channelId, text) {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${slackToken}`
       },
-      body: JSON.stringify({
-        channel: channelId,
-        text: text
-      })
+      body: JSON.stringify(messagePayload)
     });
     
     const data = await response.json();
@@ -474,7 +481,7 @@ function registerForm(title, deadline, channelId, messageTs) {
   }
 }
 
-// Função para verificar prazos e enviar lembretes
+// Função para verificar prazos e enviar lembretes - mantém notificações como mensagens normais
 async function checkDeadlines() {
   try {
     console.log(`\n[${new Date().toISOString()}] 🔔 VERIFICANDO PRAZOS DE FORMULÁRIOS`);
@@ -504,9 +511,9 @@ async function checkDeadlines() {
       const deadline = new Date(form.deadline);
       deadline.setHours(23, 59, 59, 999); // Definir para final do dia
       
-      // Calcular diferença em dias
+      // Calcular diferença em dias - usando Math.floor para cálculo correto
       const diffTime = deadline.getTime() - today.getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
       
       console.log(`Formulário: ${form.title}, Prazo: ${deadline.toISOString()}, Dias restantes: ${diffDays}`);
       
@@ -519,9 +526,9 @@ async function checkDeadlines() {
           // Formatar a data no formato DD/MM
           const formattedDate = `${deadline.getDate().toString().padStart(2, '0')}/${(deadline.getMonth() + 1).toString().padStart(2, '0')}`;
           
-          // Enviar mensagem de lembrete
+          // Enviar mensagem de lembrete como mensagem normal (sem thread)
           const message = `⚠️ *LEMBRETE: ÚLTIMO DIA* ⚠️\n\nHoje (${formattedDate}) é o *ÚLTIMO DIA* para responder ao formulário:\n*${form.title}*\n\nNão deixe para depois!`;
-          await enviarMensagemSlack(form.channelId, message);
+          await enviarMensagemSlack(form.channelId, message); // Sem thread_ts
           
           // Marcar que o lembrete do dia final foi enviado hoje
           form.finalDayReminderSent = today.toISOString().split('T')[0];
@@ -539,9 +546,9 @@ async function checkDeadlines() {
           // Formatar a data no formato DD/MM
           const formattedDate = `${deadline.getDate().toString().padStart(2, '0')}/${(deadline.getMonth() + 1).toString().padStart(2, '0')}`;
           
-          // Enviar mensagem de lembrete
+          // Enviar mensagem de lembrete como mensagem normal (sem thread)
           const message = `⚠️ *LEMBRETE* ⚠️\n\nO formulário *${form.title}* deve ser respondido até *amanhã (${formattedDate})*.\n\nNão deixe para a última hora!`;
-          await enviarMensagemSlack(form.channelId, message);
+          await enviarMensagemSlack(form.channelId, message); // Sem thread_ts
           
           // Marcar que o lembrete de 1 dia foi enviado hoje
           form.oneDayReminderSent = today.toISOString().split('T')[0];
@@ -624,13 +631,14 @@ function testRegexOnText(regex, text) {
   return null;
 }
 
-// Função para processar eventos do Slack
+// Função modificada para processar eventos do Slack
 async function processSlackEvent(event) {
   try {
     // Verificar se é uma mensagem
     if (event.type === 'message' && event.text) {
       const text = event.text;
       const channelId = event.channel;
+      const messageTs = event.ts; // Timestamp da mensagem original
       
       console.log(`\n----- ANÁLISE DE MENSAGEM -----`);
       console.log(`[ORIGINAL] ${text}`);
@@ -641,9 +649,9 @@ async function processSlackEvent(event) {
         const response = processCommand(text, channelId);
         
         if (response) {
-          // Enviar resposta para o Slack
-          await enviarMensagemSlack(channelId, response.text);
-          console.log(`[SUCESSO] Comando processado com sucesso`);
+          // Enviar resposta para o Slack em thread
+          await enviarMensagemSlack(channelId, response.text, messageTs);
+          console.log(`[SUCESSO] Comando processado com sucesso (respondido em thread)`);
           console.log(`----- FIM DA ANÁLISE -----\n`);
           return true;
         } else {
@@ -706,9 +714,9 @@ async function processSlackEvent(event) {
           // Formatar a data no formato DD/MM
           const formattedDate = `${day.toString().padStart(2, '0')}/${month.toString().padStart(2, '0')}`;
           
-          // Enviar mensagem de confirmação
+          // Enviar mensagem de confirmação em thread
           const confirmationMessage = `✅ *Novo formulário detectado!*\n\n*Título:* ${form.title}\n*Prazo:* ${formattedDate}\n*ID:* ${form.id}\n\n_Lembretes serão enviados 1 dia antes e no último dia para preenchimento às 19:00._`;
-          await enviarMensagemSlack(channelId, confirmationMessage);
+          await enviarMensagemSlack(channelId, confirmationMessage, messageTs);
           
           console.log(`----- FIM DA ANÁLISE -----\n`);
           return true;
